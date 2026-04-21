@@ -11,9 +11,16 @@ from urllib.parse import urljoin, urlparse
 
 from camoufox.sync_api import Camoufox
 
-OPENAI_AUTH = "https://auth.openai.com"
-CHATGPT_APP = "https://chatgpt.com"
-PLATFORM_LOGIN_ENTRY = "https://platform.openai.com/login"
+from .constants import (
+    OPENAI_AUTH,
+    CHATGPT_APP,
+    PLATFORM_LOGIN_ENTRY,
+    SENTINEL_SDK_URL,
+    SENTINEL_REQ_URL,
+    SENTINEL_FRAME_URL,
+    SENTINEL_BASE,
+    OAUTH_CONSENT_FORM_SELECTOR,
+)
 
 EMAIL_INPUT_SELECTORS = [
     'input#login-email',
@@ -840,7 +847,7 @@ class _SentinelTokenGenerator:
             4294705152,
             random.random(),
             self.user_agent,
-            "https://sentinel.openai.com/sentinel/20260124ceb8/sdk.js",
+            SENTINEL_SDK_URL,
             None,
             None,
             "en-US",
@@ -924,13 +931,13 @@ def _build_browser_sentinel_token(page, device_id: str, flow: str, user_agent: s
     )
     result = _browser_fetch(
         page,
-        "https://sentinel.openai.com/backend-api/sentinel/req",
+        SENTINEL_REQ_URL,
         method="POST",
         headers=_build_browser_headers(
             user_agent=user_agent,
             accept="*/*",
-            referer="https://sentinel.openai.com/backend-api/sentinel/frame.html?sv=20260219f9f6",
-            origin="https://sentinel.openai.com",
+            referer=SENTINEL_FRAME_URL,
+            origin=SENTINEL_BASE,
             content_type="text/plain;charset=UTF-8",
             extra_headers={
                 "sec-fetch-site": "same-origin",
@@ -1872,7 +1879,7 @@ def _complete_oauth_in_browser(page, oauth_start, proxy, log) -> dict | None:
     """
     from .oauth import submit_callback_url
 
-    CONSENT_FORM_SELECTOR = 'form[action*="/sign-in-with-chatgpt/"][action*="/consent"]'
+    CONSENT_FORM_SEL = OAUTH_CONSENT_FORM_SELECTOR
     MAX_ROUNDS = 4
     CLICK_EFFECT_TIMEOUT = 12
 
@@ -1909,8 +1916,9 @@ def _complete_oauth_in_browser(page, oauth_start, proxy, log) -> dict | None:
     def _find_consent_button():
         """按优先级查找 consent 页面的 Continue 按钮"""
         # 策略 1: 在 consent form 内找 submit 按钮
-        btn = page.evaluate("""() => {
-            const form = document.querySelector('form[action*="/sign-in-with-chatgpt/"][action*="/consent"]');
+        _sel = CONSENT_FORM_SEL
+        btn = page.evaluate("""(sel) => {
+            const form = document.querySelector(sel);
             if (!form) return null;
             const buttons = form.querySelectorAll('button[type="submit"], input[type="submit"], [role="button"]');
             for (const el of buttons) {
@@ -1922,7 +1930,7 @@ def _complete_oauth_in_browser(page, oauth_start, proxy, log) -> dict | None:
             const first = Array.from(buttons).find(el => el.offsetParent !== null);
             if (first) return 'form-submit';
             return null;
-        }""")
+        }""", _sel)
         if btn:
             return btn
         # 策略 2: 全局查找 Continue 按钮
@@ -1945,8 +1953,8 @@ def _complete_oauth_in_browser(page, oauth_start, proxy, log) -> dict | None:
     def _click_strategy_request_submit(log_round: int) -> bool:
         """策略 1: form.requestSubmit(button) — 最可靠的表单提交方式"""
         try:
-            result = page.evaluate("""() => {
-                const form = document.querySelector('form[action*="/sign-in-with-chatgpt/"][action*="/consent"]');
+            result = page.evaluate("""(sel) => {
+                const form = document.querySelector(sel);
                 if (!form) return 'no-form';
                 const buttons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
                 let target = null;
@@ -1964,7 +1972,7 @@ def _complete_oauth_in_browser(page, oauth_start, proxy, log) -> dict | None:
                 }
                 target.click();
                 return 'click-fallback';
-            }""")
+            }""", CONSENT_FORM_SEL)
             log(f"  consent 第{log_round}轮 requestSubmit: {result}")
             return result not in ("no-form", "no-button")
         except Exception as e:
@@ -2004,7 +2012,8 @@ def _complete_oauth_in_browser(page, oauth_start, proxy, log) -> dict | None:
                     }
                 }
                 return null;
-            }""")
+            }
+            """)
             if result:
                 log(f"  consent 第{log_round}轮 JS dispatch: {result}")
                 return True

@@ -213,7 +213,8 @@ class ChatGPTPlatform(BasePlatform):
         a.refresh_token = extra.get("refresh_token", "")
         a.id_token = extra.get("id_token", "")
         a.session_token = extra.get("session_token", "")
-        a.client_id = extra.get("client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
+        from .constants import OAUTH_CLIENT_ID
+        a.client_id = extra.get("client_id", OAUTH_CLIENT_ID)
         a.cookies = extra.get("cookies", "")
         a.user_id = account.user_id or ""
         a.account_id = account.user_id or ""

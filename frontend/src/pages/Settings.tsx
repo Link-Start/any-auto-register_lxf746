@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getConfig, getConfigOptions, getPlatforms, invalidateConfigCache, invalidateConfigOptionsCache, invalidatePlatformsCache } from '@/lib/app-data'
-import type { ChoiceOption, ConfigOptionsResponse, ProviderDriver, ProviderOption, ProviderSetting } from '@/lib/config-options'
+import type { ChoiceOption, ConfigOptionsResponse, ProviderDriver, ProviderField as ProviderFieldDef, ProviderOption, ProviderSetting } from '@/lib/config-options'
 import { getCaptchaStrategyLabel } from '@/lib/config-options'
 import { apiFetch } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -333,27 +333,49 @@ function Field({ field, form, setForm, showSecret, setShowSecret, selectOptions 
 }
 
 function ProviderField({ field, value, onChange, showSecret, setShowSecret, secretKey, disabled = false }: any) {
-  const { label, placeholder, secret } = field
+  const { label, placeholder, secret, type, options } = field
   return (
     <div className="grid grid-cols-3 gap-4 items-center py-3 border-b border-white/5 last:border-0">
       <label className="text-sm text-[var(--text-secondary)] font-medium">{label}</label>
       <div className="col-span-2 relative">
-        <input
-          type={secret && !showSecret[secretKey] ? 'password' : 'text'}
-          value={value || ''}
-          onChange={e => onChange(e.target.value)}
-          disabled={disabled}
-          placeholder={placeholder}
-          className="control-surface pr-10 disabled:opacity-70"
-        />
-        {secret && (
-          <button
-            onClick={() => setShowSecret((s: any) => ({ ...s, [secretKey]: !s[secretKey] }))}
+        {type === 'select' && options?.length ? (
+          <select
+            value={value || options[0]?.value || ''}
+            onChange={e => onChange(e.target.value)}
             disabled={disabled}
-            className="absolute right-3 top-2.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            className="control-surface appearance-none disabled:opacity-70"
           >
-            {showSecret[secretKey] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
+            {options.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : type === 'textarea' ? (
+          <textarea
+            value={value || ''}
+            onChange={e => onChange(e.target.value)}
+            disabled={disabled}
+            placeholder={placeholder}
+            rows={3}
+            className="control-surface pr-10 disabled:opacity-70 resize-y"
+          />
+        ) : (
+          <>
+            <input
+              type={secret && !showSecret[secretKey] ? 'password' : 'text'}
+              value={value || ''}
+              onChange={e => onChange(e.target.value)}
+              disabled={disabled}
+              placeholder={placeholder}
+              className="control-surface pr-10 disabled:opacity-70"
+            />
+            {secret && (
+              <button
+                onClick={() => setShowSecret((s: any) => ({ ...s, [secretKey]: !s[secretKey] }))}
+                disabled={disabled}
+                className="absolute right-3 top-2.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              >
+                {showSecret[secretKey] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -448,15 +470,15 @@ function ProviderDetailModal({
 }: any) {
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-panel dialog-panel-md overflow-y-auto" style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+      <div className="dialog-panel dialog-panel-md flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
           <div>
             <h2 className="text-base font-semibold text-[var(--text-primary)]">{title}</h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">{item.display_name || item.catalog_label} · {item.provider_key}</p>
           </div>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X className="h-4 w-4" /></button>
         </div>
-        <div className="px-6 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-[var(--border)] bg-[var(--bg-hover)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">
               {item.auth_modes.find((mode: any) => mode.value === item.auth_mode)?.label || item.auth_mode || '未设置认证方式'}
@@ -503,20 +525,19 @@ function ProviderDetailModal({
           )}
           {item.fields.length === 0 ? (
             <div className="text-sm text-[var(--text-muted)] py-3">这个 provider 当前无需额外配置。</div>
-          ) : item.fields.map((field: any) => (
-            <ProviderField
-              key={field.key}
-              field={field}
-              value={field.category === 'auth' ? item.auth?.[field.key] : item.config?.[field.key]}
-              onChange={(value: string) => onChangeField(field, value)}
+          ) : (
+            <GroupedProviderFields
+              fields={item.fields}
+              getValue={(field: ProviderFieldDef) => field.category === 'auth' ? item.auth?.[field.key] : item.config?.[field.key]}
+              onChangeField={(field: ProviderFieldDef, value: string) => onChangeField(field, value)}
               showSecret={showSecret}
               setShowSecret={setShowSecret}
-              secretKey={`${item.provider_key}:${field.key}`}
+              secretKeyPrefix={item.provider_key}
               disabled={readOnly}
             />
-          ))}
+          )}
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-[var(--border)]">
+        <div className="flex-shrink-0 flex gap-3 px-6 py-4 border-t border-[var(--border)]">
           {readOnly ? (
             <>
               <Button onClick={onEdit} className="flex-1">切换到编辑</Button>
@@ -598,6 +619,68 @@ function AddProviderModal({
   )
 }
 
+const FIELD_CATEGORY_LABELS: Record<string, string> = {
+  connection: '连接与端点',
+  auth: '认证',
+  identity: '邮箱身份',
+}
+
+function GroupedProviderFields({
+  fields,
+  getValue,
+  onChangeField,
+  showSecret,
+  setShowSecret,
+  secretKeyPrefix,
+  disabled = false,
+}: {
+  fields: ProviderFieldDef[]
+  getValue: (field: ProviderFieldDef) => string
+  onChangeField: (field: ProviderFieldDef, value: string) => void
+  showSecret: Record<string, boolean>
+  setShowSecret: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
+  secretKeyPrefix: string
+  disabled?: boolean
+}) {
+  const grouped = fields.reduce<Record<string, ProviderFieldDef[]>>((acc, field) => {
+    const cat = field.category || 'other'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(field)
+    return acc
+  }, {})
+
+  const categoryOrder = ['auth', 'identity', 'connection', 'other']
+  const sortedCategories = Object.keys(grouped).sort((a, b) => {
+    const ia = categoryOrder.indexOf(a)
+    const ib = categoryOrder.indexOf(b)
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+  })
+
+  return (
+    <>
+      {sortedCategories.map(cat => (
+        <div key={cat}>
+          <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mt-4 mb-1 pt-2 border-t border-white/5">
+            {FIELD_CATEGORY_LABELS[cat] || cat}
+          </div>
+          {grouped[cat].map(field => (
+            <ProviderField
+              key={field.key}
+              field={field}
+              value={getValue(field)}
+              onChange={(value: string) => onChangeField(field, value)}
+              showSecret={showSecret}
+              setShowSecret={setShowSecret}
+              secretKey={`${secretKeyPrefix}:${field.key}`}
+              disabled={disabled}
+            />
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
 function CreateProviderDefinitionModal({
   title,
   providerType,
@@ -616,15 +699,15 @@ function CreateProviderDefinitionModal({
 
   return (
     <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog-panel dialog-panel-md overflow-y-auto" style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+      <div className="dialog-panel dialog-panel-md flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
           <div>
             <h2 className="text-base font-semibold text-[var(--text-primary)]">{title}</h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">新增一个动态 provider definition，并同时创建首个可用配置。</p>
           </div>
           <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X className="h-4 w-4" /></button>
         </div>
-        <div className="px-6 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           <div className="grid grid-cols-3 gap-4 items-center py-3 border-b border-white/5">
             <label className="text-sm text-[var(--text-secondary)] font-medium">Provider 名称</label>
             <div className="col-span-2">
@@ -668,12 +751,11 @@ function CreateProviderDefinitionModal({
           )}
           {currentFields.length === 0 ? (
             <div className="text-sm text-[var(--text-muted)] py-3">这个驱动族当前无需额外配置字段。</div>
-          ) : currentFields.map((field: any) => (
-            <ProviderField
-              key={field.key}
-              field={field}
-              value={field.category === 'auth' ? form.auth[field.key] : form.config[field.key]}
-              onChange={(value: string) => {
+          ) : (
+            <GroupedProviderFields
+              fields={currentFields}
+              getValue={(field: ProviderFieldDef) => field.category === 'auth' ? form.auth[field.key] : form.config[field.key]}
+              onChangeField={(field: ProviderFieldDef, value: string) => {
                 if (field.category === 'auth') {
                   onChange('auth', { ...form.auth, [field.key]: value })
                 } else {
@@ -682,11 +764,11 @@ function CreateProviderDefinitionModal({
               }}
               showSecret={showSecret}
               setShowSecret={setShowSecret}
-              secretKey={`create:${providerType}:${field.key}`}
+              secretKeyPrefix={`create:${providerType}`}
             />
-          ))}
+          )}
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-[var(--border)]">
+        <div className="flex-shrink-0 flex gap-3 px-6 py-4 border-t border-[var(--border)]">
           <Button onClick={onCreate} disabled={creating} className="flex-1">
             <Plus className="h-4 w-4 mr-2" />
             {creating ? '创建中...' : '创建并启用'}

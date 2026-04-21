@@ -11,8 +11,10 @@ build/
 
 # 数据库
 *.db
+*.db-journal
 *.sqlite
 *.db.*.bak
+*.db.pre_*
 
 # 日志
 logs/

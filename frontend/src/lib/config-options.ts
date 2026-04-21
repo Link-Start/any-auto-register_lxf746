@@ -9,6 +9,8 @@ export type ProviderField = {
   placeholder?: string
   secret?: boolean
   category?: string
+  type?: 'text' | 'select' | 'textarea'
+  options?: Array<{ value: string; label: string }>
 }
 
 export type ProviderOption = {

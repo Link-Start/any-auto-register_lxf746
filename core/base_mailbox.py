@@ -7,6 +7,12 @@ from urllib.parse import urlencode, urlparse
 
 from core.tls import insecure_request, mark_session_insecure, suppress_insecure_request_warning
 
+# ── 邮箱服务默认 API 地址（统一维护，需要时在此修改） ──
+DEFAULT_LAOUDO_API_URL = "https://laoudo.com/api/email"
+DEFAULT_AITRE_API_URL = "https://mail.aitre.cc/api/tempmail"
+DEFAULT_TEMPMAIL_LOL_API_URL = "https://api.tempmail.lol/v2"
+DEFAULT_TEMPMAIL_WEB_BASE_URL = "https://web2.temp-mail.org"
+
 
 @dataclass
 class MailboxAccount:
@@ -218,7 +224,17 @@ def _create_laoudo(extra: dict, proxy: str | None) -> 'BaseMailbox':
     )
 
 
+def _create_generic_http(extra: dict, proxy: str | None, *, pipeline_config: dict | None = None) -> 'BaseMailbox':
+    from core.generic_http_mailbox import GenericHttpMailbox
+    return GenericHttpMailbox(
+        pipeline_config=pipeline_config or {},
+        settings=extra,
+        proxy=proxy,
+    )
+
+
 MAILBOX_FACTORY_REGISTRY = {
+    "generic_http_mailbox": _create_generic_http,
     "tempmail_lol_api": _create_tempmail,
     "tempmail_web_api": _create_tempmail_web,
     "duckmail_api": _create_duckmail,
@@ -228,6 +244,7 @@ MAILBOX_FACTORY_REGISTRY = {
     "testmail_api": _create_testmail,
     "laoudo_api": _create_laoudo,
     # backward-compat fallback
+    "generic_http": _create_generic_http,
     "tempmail_lol": _create_tempmail,
     "tempmail_web": _create_tempmail_web,
     "duckmail": _create_duckmail,
@@ -282,7 +299,11 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
         factory = MAILBOX_FACTORY_REGISTRY.get(lookup_key)
         if not factory:
             continue
-        providers.append((key, factory(resolved_extra, proxy)))
+        if lookup_key in ("generic_http_mailbox", "generic_http"):
+            pipeline_config = current_definition.get_metadata() if current_definition else {}
+            providers.append((key, factory(resolved_extra, proxy, pipeline_config=pipeline_config)))
+        else:
+            providers.append((key, factory(resolved_extra, proxy)))
 
     if not providers:
         raise RuntimeError("没有可用的邮箱 provider 实例")
@@ -293,11 +314,11 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
 
 class LaoudoMailbox(BaseMailbox):
     """laoudo.com 邮箱服务"""
-    def __init__(self, auth_token: str, email: str, account_id: str):
+    def __init__(self, auth_token: str, email: str, account_id: str, api_url: str = ""):
         self.auth = auth_token
         self._email = email
         self._account_id = account_id
-        self.api = "https://laoudo.com/api/email"
+        self.api = (api_url or DEFAULT_LAOUDO_API_URL).rstrip("/")
         self._ua = "Mozilla/5.0"
 
     def get_email(self) -> MailboxAccount:
@@ -419,9 +440,9 @@ class LaoudoMailbox(BaseMailbox):
 
 class AitreMailbox(BaseMailbox):
     """mail.aitre.cc 临时邮箱"""
-    def __init__(self, email: str):
+    def __init__(self, email: str, api_url: str = ""):
         self._email = email
-        self.api = "https://mail.aitre.cc/api/tempmail"
+        self.api = (api_url or DEFAULT_AITRE_API_URL).rstrip("/")
 
     def get_email(self) -> MailboxAccount:
         return MailboxAccount(email=self._email)
@@ -501,8 +522,8 @@ class AitreMailbox(BaseMailbox):
 class TempMailLolMailbox(BaseMailbox):
     """tempmail.lol 免费临时邮箱（无需注册，自动生成）"""
 
-    def __init__(self, proxy: str = None):
-        self.api = "https://api.tempmail.lol/v2"
+    def __init__(self, proxy: str = None, api_url: str = ""):
+        self.api = (api_url or DEFAULT_TEMPMAIL_LOL_API_URL).rstrip("/")
         self.proxy = {"http": proxy, "https": proxy} if proxy else None
         self._token = None
         self._email = None
@@ -601,7 +622,7 @@ class TempMailWebMailbox(BaseMailbox):
     def __init__(self, base_url: str = "", proxy: str = None):
         self.base_url = _normalize_api_base_url(
             base_url,
-            default="https://web2.temp-mail.org",
+            default=DEFAULT_TEMPMAIL_WEB_BASE_URL,
             label="Temp-Mail Web URL",
         )
         self.proxy = str(proxy or "").strip()
