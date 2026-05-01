@@ -260,7 +260,7 @@ docker compose up -d --build
 | 服务 | 地址 | 说明 |
 |------|------|------|
 | Web UI | `http://localhost:8000` | 主界面 |
-| noVNC | `http://localhost:6080` | 可视化浏览器（headed 模式） |
+| noVNC | `http://localhost:6080/vnc.html` | 可视化浏览器（headed 模式） |
 | Solver | `http://localhost:8889` | Turnstile 验证码求解器 |
 
 > 云服务器部署时，请确保安全组/防火墙放行 8000、6080、8889 端口。
