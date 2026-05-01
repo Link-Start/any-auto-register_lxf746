@@ -1,5 +1,31 @@
 import os
+import sys
 from contextlib import asynccontextmanager
+
+# 把 stdout/stderr 强制成 utf-8（Windows 中文版默认是 gbk，碰到 ✗ ✓ 等
+# 非 GBK 字符会抛 UnicodeEncodeError 让进程崩溃）。errors="replace" 双保险，
+# 任何编码失败的字符替换成 ? 而不是抛错。
+# 同时设置 PYTHONUTF8 环境变量，确保子进程也使用 UTF-8。
+os.environ.setdefault("PYTHONUTF8", "1")
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+# 兜底：如果 reconfigure 不可用（PyInstaller 某些版本），用 wrapper 包一层
+if sys.stdout is not None and getattr(sys.stdout, "encoding", "").lower() not in ("utf-8", "utf8"):
+    try:
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+    except Exception:
+        pass
+if sys.stderr is not None and getattr(sys.stderr, "encoding", "").lower() not in ("utf-8", "utf8"):
+    try:
+        import io
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+    except Exception:
+        pass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
