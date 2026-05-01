@@ -1281,8 +1281,13 @@ def _submit_login_email_via_page(page, email: str, log) -> dict:
 def _do_codex_oauth(page, cookies_dict: dict, email: str, password: str, otp_callback, phone_callback, proxy: str | None, log) -> dict | None:
     """在真实浏览器会话内完成 Codex OAuth，返回完整 token 包。"""
     from .oauth import generate_oauth_url
+    from .constants import CODEX_CLIENT_ID, CODEX_REDIRECT_URI, CODEX_SCOPE
 
-    oauth_start = generate_oauth_url()
+    oauth_start = generate_oauth_url(
+        redirect_uri=CODEX_REDIRECT_URI,
+        scope=CODEX_SCOPE,
+        client_id=CODEX_CLIENT_ID,
+    )
     try:
         user_agent = str(page.evaluate("() => navigator.userAgent") or "").strip() or _random_chrome_ua()
     except Exception:
@@ -1310,6 +1315,7 @@ def _do_codex_oauth(page, cookies_dict: dict, email: str, password: str, otp_cal
             log(
                 f"  OAuth state step[{step+1}/20]: "
                 f"page={state.get('page_type') or '-'} next={next_url[:60]}"
+                f" url={current_url[:120]}"
             )
 
             callback_url = ""
@@ -1449,6 +1455,29 @@ def _do_codex_oauth(page, cookies_dict: dict, email: str, password: str, otp_cal
 
                 log("  ⚠️ add_phone 无法跳过且无可用接码服务")
                 return None
+
+            # chatgpt_home: 页面可能正在 JS 重定向（如跳转到 add-phone）
+            # 等待更长时间让重定向完成
+            if state["page_type"] == "chatgpt_home":
+                # 检查是否是错误页面
+                if "error" in current_url:
+                    error_msg = current_url.split("error=")[-1].split("&")[0] if "error=" in current_url else "unknown"
+                    log(f"  OAuth 错误页面: {error_msg} url={current_url[:150]}")
+                    raise RuntimeError(f"OpenAI OAuth 错误: {error_msg}")
+                time.sleep(2)
+                new_url = str(page.url or "")
+                if new_url != current_url:
+                    continue
+                # 检查 cookie 里是否有 session
+                cookies_dict = _get_cookies(page)
+                for ck, cv in cookies_dict.items():
+                    if "session" in ck.lower() and cv:
+                        log(f"  chatgpt_home 检测到 session cookie: {ck}")
+                        session_result = _complete_oauth_with_session(cookies_dict, oauth_start, proxy, log)
+                        if session_result:
+                            return session_result
+                        break
+                continue
 
             target_url = _normalize_url(state.get("continue_url") or "", OPENAI_AUTH)
             if target_url and target_url != current_url:
@@ -3142,8 +3171,12 @@ class ChatGPTBrowserRegister:
             cookies_dict = _get_cookies(page)
 
             # ═══ 通过 Codex CLI OAuth 获取正确的 token ═══
-            # 复用当前注册完成后的浏览器会话做页面驱动 OAuth
+            # 用干净的浏览器上下文做 OAuth（注册时的 cookie 会干扰 OAuth 流程）
             self.log("执行 Codex CLI OAuth 流程获取 token...")
+            try:
+                page.context.clear_cookies()
+            except Exception:
+                pass
             codex_result = _do_codex_oauth(
                 page,
                 cookies_dict,

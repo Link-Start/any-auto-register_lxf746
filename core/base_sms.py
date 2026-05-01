@@ -110,9 +110,10 @@ class SmsActivateProvider(BaseSmsProvider):
 
     BASE_URL = "https://api.sms-activate.guru/stubs/handler_api.php"
 
-    def __init__(self, api_key: str, *, default_country: str = ""):
+    def __init__(self, api_key: str, *, default_country: str = "", proxy: str = None):
         self.api_key = api_key
         self.default_country = default_country or "ru"
+        self._proxy = {"http": proxy, "https": proxy} if proxy else None
 
     def _request(self, action: str, **params) -> str:
         params["api_key"] = self.api_key
@@ -121,7 +122,7 @@ class SmsActivateProvider(BaseSmsProvider):
             self.BASE_URL,
             params=params,
             timeout=20,
-            proxies={"http": None, "https": None},
+            proxies=self._proxy,
         )
         resp.raise_for_status()
         return resp.text.strip()
@@ -461,8 +462,12 @@ class HeroSmsProvider(BaseSmsProvider):
 
     def _request_number_raw(self, service: str, country: str) -> dict:
         common = {"service": service, "country": country}
+        # HeroSMS API 在不传 maxPrice 时某些国家/服务返回 NO_NUMBERS
+        # 传一个较大的值表示"不限价格"
         if self.max_price > 0:
             common["maxPrice"] = self.max_price
+        else:
+            common["maxPrice"] = 1
         v2_error = ""
         try:
             resp = self._request({"action": "getNumberV2", **common})
@@ -827,26 +832,27 @@ def is_herosms_phone_cache_alive(config: dict | None = None) -> tuple[bool, dict
 
 def create_sms_provider(provider_key: str, config: dict) -> BaseSmsProvider:
     """Create an SMS provider instance from config."""
-    if provider_key == "sms_activate":
+    if provider_key in ("sms_activate", "sms_activate_api"):
         api_key = config.get("sms_activate_api_key", "")
         if not api_key:
             raise RuntimeError("SMS-Activate 未配置 API Key")
         return SmsActivateProvider(
             api_key=api_key,
-            default_country=config.get("sms_activate_country", ""),
+            default_country=config.get("sms_activate_country", config.get("sms_activate_default_country", "")),
+            proxy=config.get("sms_proxy") or config.get("proxy") or None,
         )
-    if provider_key == "herosms":
+    if provider_key in ("herosms", "herosms_api"):
         api_key = str(config.get("herosms_api_key", "") or "").strip()
         if not api_key:
             raise RuntimeError("HeroSMS 未配置 API Key")
         return HeroSmsProvider(
             api_key=api_key,
-            default_service=str(config.get("sms_service") or config.get("herosms_service") or HERO_SMS_DEFAULT_SERVICE),
-            default_country=str(config.get("sms_country") or config.get("herosms_country") or HERO_SMS_DEFAULT_COUNTRY),
+            default_service=str(config.get("sms_service") or config.get("herosms_service") or config.get("herosms_default_service") or HERO_SMS_DEFAULT_SERVICE),
+            default_country=str(config.get("sms_country") or config.get("herosms_country") or config.get("herosms_default_country") or HERO_SMS_DEFAULT_COUNTRY),
             max_price=_safe_float(config.get("herosms_max_price"), -1),
             proxy=str(config.get("sms_proxy") or config.get("proxy") or "") or None,
             reuse_phone_to_max=_safe_bool(config.get("register_reuse_phone_to_max"), True),
-            phone_success_max=max(0, _safe_int(config.get("register_phone_success_max"), 3)),
+            phone_success_max=max(0, _safe_int(config.get("register_phone_extra_max") or config.get("register_phone_success_max"), 3)),
         )
     raise RuntimeError(f"未知的接码服务: {provider_key}")
 

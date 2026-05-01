@@ -119,9 +119,20 @@ def build_phone_callbacks(ctx: RegistrationContext, *, service: str | None = Non
         merged.get("sms_country")
         or merged.get("phone_country")
         or merged.get("sms_activate_country")
+        or merged.get("sms_activate_default_country")
+        or merged.get("herosms_country")
+        or merged.get("herosms_default_country")
         or ""
     ).strip()
-    sms_service = str(merged.get("sms_service") or service or ctx.platform_name).strip() or ctx.platform_name
+    sms_service = str(
+        merged.get("sms_service")
+        or merged.get("herosms_service")
+        or merged.get("herosms_default_service")
+        or merged.get("sms_activate_service")
+        or merged.get("sms_activate_default_service")
+        or service
+        or ctx.platform_name
+    ).strip() or ctx.platform_name
     ctx.log(f"[SMS] phone_callback 已就绪: provider={provider_key} 来源={source} service={sms_service} country={country or 'default'}")
     return create_phone_callbacks(
         provider_key,
